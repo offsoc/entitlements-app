@@ -51,6 +51,8 @@ module Entitlements
             Entitlements.cache[:predictive_state][:by_ou][ou] ||= {}
             Entitlements.cache[:predictive_state][:by_ou][ou][identifier] = member_set
             Entitlements.cache[:predictive_state][:by_dn][dn] = { members: member_set, metadata: metadata }
+          rescue => e
+            raise "Failed to load predictive state cache file #{filename}: #{e.message}"
           end
 
           Entitlements.logger.debug "Loaded #{Entitlements.cache[:predictive_state][:by_ou].keys.size} OU(s) from cache"

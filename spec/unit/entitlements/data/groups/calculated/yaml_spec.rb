@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 require_relative "../../../../spec_helper"
 
+# NOTE: The test suite mocks all dates with allow(Time).to receive(:now).and_return(Time.utc(2018, 4, 1, 12, 0, 0))
+
 describe Entitlements::Data::Groups::Calculated::YAML do
   let(:people_obj) { Entitlements::Data::People::YAML.new(filename: fixture("people.yaml")) }
   let(:cache) { { people_obj: people_obj } }
@@ -32,6 +34,57 @@ describe Entitlements::Data::Groups::Calculated::YAML do
       filename = fixture("ldap-config/filters/no-filters-description.yaml")
       subject = described_class.new(filename: filename)
       expect(subject.description).to eq("")
+    end
+  end
+
+  describe "#schema_version" do
+    it "returns the version string when one is set" do
+      filename = fixture("ldap-config/filters/no-filters-with-schema-version.yaml")
+      subject = described_class.new(filename: filename)
+      expect(subject.schema_version).to eq("entitlements/1.2.3")
+    end
+
+    it "returns the version string when one is set without the patch" do
+      filename = fixture("ldap-config/filters/no-filters-with-schema-version-no-patch.yaml")
+      subject = described_class.new(filename: filename)
+      expect(subject.schema_version).to eq("entitlements/1.2")
+    end
+
+    it "returns the version string when one is set with just the major version" do
+      filename = fixture("ldap-config/filters/no-filters-with-schema-version-major.yaml")
+      subject = described_class.new(filename: filename)
+      expect(subject.schema_version).to eq("entitlements/1")
+    end
+
+    it "returns the version string when one is set with just the major version (with v prefix)" do
+      filename = fixture("ldap-config/filters/no-filters-with-schema-version-major-with-v.yaml")
+      subject = described_class.new(filename: filename)
+      expect(subject.schema_version).to eq("entitlements/v1")
+    end
+
+
+    it "returns the version string when one is set (with v prefix)" do
+      filename = fixture("ldap-config/filters/no-filters-with-schema-version-with-v.yaml")
+      subject = described_class.new(filename: filename)
+      expect(subject.schema_version).to eq("entitlements/v1.2.3")
+    end
+
+    it "returns the default version when schema_version is undefined" do
+      filename = fixture("ldap-config/filters/no-filters-description.yaml")
+      subject = described_class.new(filename: filename)
+      expect(subject.schema_version).to eq("entitlements/v1")
+    end
+
+    it "throws an error when an invalid schema_version string is provided" do
+      filename = fixture("ldap-config/filters/no-filters-with-bad-schema-version.yaml")
+      subject = described_class.new(filename: filename)
+      expect { subject.schema_version }.to raise_error(RuntimeError, /Invalid schema version format/)
+    end
+
+    it "throws an error when the version string is missing the namespace" do
+      filename = fixture("ldap-config/filters/no-filters-with-missing-version-namespace.yaml")
+      subject = described_class.new(filename: filename)
+      expect { subject.schema_version }.to raise_error(RuntimeError, /Invalid schema version format/)
     end
   end
 
@@ -232,7 +285,12 @@ describe Entitlements::Data::Groups::Calculated::YAML do
       context "complex structure" do
         let(:filename) { fixture("ldap-config/yaml/expiration-complex.yaml") }
 
-        it "constructs the correct rule set" do
+        it "constructs the correct rule set with complex nested expiration" do
+          # Expected results based on expiration-complex.yaml:
+          # - username: peterbald (no expiration) -> kept
+          # - and: group foo/bar (Sept 2018, not expired) and foo/baz (March 2018, expired) -> only foo/bar kept
+          # - or: all usernames expired (March 2018) -> empty array
+          # - or: cheetoh (March 2018, expired) and nebelung (Sept 2018, not expired) -> only nebelung kept
           answer = {
             "or"=>[
               {"username"=>"peterbald"},
@@ -243,6 +301,104 @@ describe Entitlements::Data::Groups::Calculated::YAML do
           }
           result = subject.send(:rules)
           expect(result).to eq(answer)
+        end
+      end
+
+      context "individual username expiration" do
+        let(:filename) { fixture("ldap-config/yaml/expiration-individual-usernames.yaml") }
+
+        it "filters out expired usernames while keeping non-expired ones" do
+          answer = {
+            "or" => [
+              { "username" => "alice" },
+              { "username" => "charlie" },
+              { "username" => "diana" }
+            ]
+          }
+          result = subject.send(:rules)
+          expect(result).to eq(answer)
+        end
+      end
+
+      context "group expiration" do
+        let(:filename) { fixture("ldap-config/yaml/expiration-groups.yaml") }
+
+        it "filters out expired groups while keeping non-expired ones" do
+          answer = {
+            "or" => [
+              { "group" => "team/active" },
+              { "group" => "team/future" },
+              { "username" => "standalone" }
+            ]
+          }
+          result = subject.send(:rules)
+          expect(result).to eq(answer)
+        end
+      end
+
+      context "mixed expiration with nested structures" do
+        let(:filename) { fixture("ldap-config/yaml/expiration-mixed-nested.yaml") }
+
+        it "correctly handles expiration in nested and/or structures" do
+          answer = {
+            "or" => [
+              { "username" => "always-active" },
+              { "and" => [
+                  { "group" => "team/core" }
+                ]
+              },
+              { "or" => [
+                  { "username" => "still-active" }
+                ]
+              }
+            ]
+          }
+          result = subject.send(:rules)
+          expect(result).to eq(answer)
+        end
+      end
+
+      context "all individual entries expired" do
+        let(:filename) { fixture("ldap-config/yaml/expiration-all-individual-expired.yaml") }
+
+        it "returns empty arrays for containers with all expired entries" do
+          answer = {
+            "or" => []
+          }
+          result = subject.send(:rules)
+          expect(result).to eq(answer)
+        end
+      end
+
+      context "expired entries but expirations are disabled" do
+        let(:filename) { fixture("ldap-config/yaml/expiration-ignore-test.yaml") }
+
+        it "ignores all expiration dates when ignore_expirations is true" do
+          begin
+            Entitlements.config["ignore_expirations"] = true
+
+            answer = {
+              "or" => [
+                { "username" => "active-user" },
+                { "username" => "expired-user" },
+                { "group" => "expired-group" }
+              ]
+            }
+            result = subject.send(:rules)
+            expect(result).to eq(answer)
+          ensure
+            Entitlements.config.delete("ignore_expirations")
+          end
+        end
+      end
+
+      context "invalid expiration date" do
+        let(:filename) { fixture("ldap-config/yaml/expiration-invalid-date.yaml") }
+
+        it "raises an error for invalid expiration date format" do
+          expect do
+            subject.send(:rules)
+          end.to raise_error(ArgumentError, /Invalid expiration date "not-a-date"/)
         end
       end
     end

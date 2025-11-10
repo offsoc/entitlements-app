@@ -1,0 +1,10 @@
+---
+description: All individual entries expired
+rules:
+  or:
+    - username: expired1
+      expiration: "2018-02-01"
+    - username: expired2
+      expiration: "2018-02-01"
+    - group: team/expired
+      expiration: "2018-02-01"

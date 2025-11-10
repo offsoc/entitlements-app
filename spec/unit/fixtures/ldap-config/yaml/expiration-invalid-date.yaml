@@ -1,0 +1,7 @@
+---
+description: Test with invalid expiration date
+rules:
+  or:
+    - username: valid-user
+    - username: invalid-expiry
+      expiration: "not-a-date"

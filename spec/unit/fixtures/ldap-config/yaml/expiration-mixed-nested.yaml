@@ -1,0 +1,16 @@
+---
+description: Mixed expiration test with nested structures
+rules:
+  or:
+    - username: always-active
+    - and:
+        - group: team/core
+        - username: temp-user
+          expiration: "2018-02-01"
+    - or:
+        - username: expired1
+          expiration: "2018-02-01"
+        - username: expired2
+          expiration: "2018-02-01"
+        - username: still-active
+          expiration: "2018-06-01"

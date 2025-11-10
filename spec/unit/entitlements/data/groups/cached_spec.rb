@@ -17,6 +17,18 @@ describe Entitlements::Data::Groups::Cached do
       end
     end
 
+    context "with a file that fails to parse" do
+      let(:dir) { fixture("predictive-state/failing-cache") }
+
+      it "raises with a custom message" do
+        expect(logger).to receive(:debug).with("Loading predictive update caches from #{dir}")
+
+        expect do
+          described_class.load_caches(dir)
+        end.to raise_error(RuntimeError, /Failed to load predictive state cache file/)
+      end
+    end
+
     context "with valid predictive state directory" do
       let(:dir) { fixture("predictive-state/cache1") }
 

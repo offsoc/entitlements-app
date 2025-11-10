@@ -1,0 +1,9 @@
+---
+description: Test with expired entries but ignoring expiration
+rules:
+  or:
+    - username: active-user
+    - username: expired-user
+      expiration: "2018-02-01"
+    - group: expired-group
+      expiration: "2018-02-01"

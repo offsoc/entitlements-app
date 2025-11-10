@@ -1,0 +1,10 @@
+---
+description: Group expiration test
+rules:
+  or:
+    - group: team/active
+    - group: team/expired
+      expiration: "2018-02-01"
+    - group: team/future
+      expiration: "2018-06-01"
+    - username: standalone
